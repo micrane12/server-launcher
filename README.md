@@ -4,6 +4,14 @@ A self-contained control panel for local dev servers, driven by slash commands
 from a `server` prompt in cmd. No pm2, no external dependencies — just Windows
 PowerShell (built in).
 
+## Quick install (one line)
+Paste this into PowerShell:
+```
+powershell -c "irm https://raw.githubusercontent.com/micrane12/server-launcher/main/install.ps1 | iex"
+```
+It downloads the launcher, sets up `servers.txt`, and adds `server` to your PATH.
+Open a **new** terminal and run `server`. Re-run the same line anytime to update.
+
 ## Files
 - `launcher.bat` — the `server` prompt; routes `/list`, `/status`, `/start`, etc.
 - `manager.ps1` — starts/stops/restarts servers and tails logs.
