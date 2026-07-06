@@ -1,79 +1,44 @@
 # Server Launcher
 
-A self-contained control panel for local dev servers, driven by slash commands
-from a `server` prompt in cmd. No pm2, no external dependencies — just Windows
-PowerShell (built in).
+A simple control panel for your local dev servers. Start, stop, and watch them
+from one `server` prompt. No pm2, no extra installs — just Windows.
 
-## Quick install (one line)
-Paste this into PowerShell:
+## Install
+Open **PowerShell** and paste this one line:
+
 ```
 powershell -c "irm https://raw.githubusercontent.com/micrane12/server-launcher/main/install.ps1 | iex"
 ```
-It downloads the launcher, sets up `servers.txt`, and adds `server` to your PATH.
-Open a **new** terminal and run `server`. Re-run the same line anytime to update.
 
-## Files
-- `launcher.bat` — the `server` prompt; routes `/list`, `/status`, `/start`, etc.
-- `manager.ps1` — starts/stops/restarts servers and tails logs.
-- `status.ps1` — the live status dashboard (reads each server's port).
-- `ui.ps1` — banner + help screens.
-- `servers.txt` — **the only file you edit per machine.**
+Then open a **new** terminal and type:
 
-## servers.txt format
-One server per line, no spaces around the `|`:
 ```
-name|working folder|start command|port
-remote-desktop|C:\Dev\REMOTE DESKTOP|python server.py|5000
+server
 ```
-Lines starting with `#` are ignored.
 
-## Setup on a new machine
-1. Clone the repo:
-   ```
-   git clone https://github.com/<your-username>/server-launcher.git "C:\Dev\SERVER LAUNCHER"
-   ```
-2. First run creates `servers.txt` from `servers.example.txt` automatically.
-   Edit **servers.txt** to match this machine's folders, commands, and ports.
-   (Your `servers.txt` is git-ignored, so each machine keeps its own.)
-3. (Optional) add the folder to PATH so you can type `server` anywhere:
-   ```
-   powershell -Command "[Environment]::SetEnvironmentVariable('PATH', [Environment]::GetEnvironmentVariable('PATH','User') + ';C:\Dev\SERVER LAUNCHER', 'User')"
-   ```
-   Open a new cmd window, then run `server`.
+That's it. (Run the same line again anytime to update to the latest version.)
 
-## Pushing changes (first time)
-Create an empty repo on GitHub (no README), then from this folder:
-```
-git init
-git add .
-git commit -m "Server launcher"
-git branch -M main
-git remote add origin https://github.com/<your-username>/server-launcher.git
-git push -u origin main
-```
-After that, `git add . && git commit -m "..." && git push` to update it.
+## Add your servers
+Inside the launcher, type `/add` and answer four questions:
 
-## Commands
-Type `/` at the `server>` prompt to see them all: `/list`, `/status`, `/watch`,
-`/start`, `/stop`, `/restart`, `/open`, `/logs`, `/add`, `/remove`, `/launch`, `/quit`.
+- **name** – a label, e.g. `my-api`
+- **folder** – where the project lives, e.g. `C:\Dev\MY API`
+- **start command** – what you'd type to run it, e.g. `python app.py` or `npm run dev`
+- **port** – the port it uses, e.g. `8000`
 
-Use a number (`/start 2`) or `all` (`/start all`); leave it off to pick from a list.
+## Everyday use
+Type `/` at the prompt to see every command. The main ones:
 
-### Adding servers
-Use `/add` inside the launcher — it asks for four things:
-- **name** – a short label for the dashboard (e.g. `my-api`)
-- **folder path** – full path to the project (e.g. `C:\Dev\MY API`)
-- **start command** – what you'd type to run it from that folder (e.g. `python app.py`, `npm run dev`)
-- **port** – the localhost port it listens on (e.g. `8000`)
+| Command | What it does |
+|---|---|
+| `/list` | show all servers and their status |
+| `/status` | live auto-refreshing dashboard |
+| `/start <name>` | start a server (or `/start all`) |
+| `/stop <name>` | stop a server (or `/stop all`) |
+| `/restart <name>` | restart a server |
+| `/open <name>` | open it in your browser |
+| `/logs <name>` | view its logs |
+| `/add` / `/remove <name>` | add or remove a server |
+| `/quit` | exit |
 
-`/remove <n>` deletes one. Both write to `servers.txt` and reload immediately.
-
-### /launch
-`/launch` lists any `.bat`/`.cmd` helper files found in your project folders,
-grouped by server. `/launch <n>` runs one.
-
-## How it works
-Each server is launched hidden with its output logged to `logs\<name>.log`.
-Status is detected by checking which process is listening on each server's port,
-so servers started any other way still show up. Runtime state lives in `.pids\`
-and `logs\` (both git-ignored).
+You can use a server's name or number with any command.
