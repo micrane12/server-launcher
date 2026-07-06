@@ -1,0 +1,14 @@
+# projects.txt — config for launcher.bat
+# One project per line, format:
+#   Name|FolderPath|StartCommand|Port
+#
+# - Name: whatever you want shown in the menu
+# - FolderPath: full path to the project folder
+# - StartCommand: the command that starts the server (npm start, python manage.py runserver, run.bat, etc.)
+# - Port: the localhost port it runs on, so the browser opens to the right page
+#
+# Lines starting with # are ignored. Edit/add/remove lines below as needed.
+
+Remote Desktop|C:\Dev\REMOTE DESKTOP|StartRemote.bat|5000
+HBS Systems|C:\Dev\HOME BUILD SYSTEM\HOME BUILD SOLUTIONS|npm run dev|3000
+Claude Bridge|C:\Dev\CLAUDE BRIDGE\server|python bridge_server.py|5765

@@ -1,0 +1,4 @@
+# nothing sensitive here yet, but keep local junk out
+*.log
+.DS_Store
+Thumbs.db
