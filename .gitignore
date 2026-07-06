@@ -1,4 +1,9 @@
-# nothing sensitive here yet, but keep local junk out
+# per-machine config - keep your local paths out of git
+servers.txt
+
+# runtime state
+logs/
+.pids/
 *.log
 .DS_Store
 Thumbs.db

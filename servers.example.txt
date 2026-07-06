@@ -1,0 +1,7 @@
+# Server Launcher config -- copy this to servers.txt and edit for THIS machine.
+# One server per line:   name|working folder|start command|port
+# No spaces around the | separators. Lines starting with # are ignored.
+
+# examples (delete these and add your own):
+my-api|C:\Dev\MY API|python app.py|8000
+my-web|C:\Dev\MY WEB|npm run dev|3000
