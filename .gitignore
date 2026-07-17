@@ -1,6 +1,9 @@
 # per-machine config - keep your local paths out of git
 servers.txt
 
+# generated tooling output
+graphify-out/
+
 # runtime state
 logs/
 .pids/

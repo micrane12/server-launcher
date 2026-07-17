@@ -16,6 +16,30 @@ $DOT=[char]0x25CF; $RE=[char]0x21BB; $BLK=[char]0x2588; $LGT=[char]0x2591
 # ---- ANSI colors: only green + red are highlights ----
 $e=[char]27
 function C($code,$s){ "$e[${code}m$s$e[0m" }
+
+# Clip a colored line to the current window width (ANSI codes don't count).
+# Keeps the aesthetic on narrow windows by hiding the overflow instead of wrapping.
+function Clip([string]$s) {
+    try { $max = [Console]::WindowWidth - 1 } catch { return $s }
+    if ($max -lt 1) { return $s }
+    $sb = New-Object System.Text.StringBuilder
+    $vis = 0; $i = 0; $ch = $s.ToCharArray(); $clipped = $false
+    while ($i -lt $ch.Length) {
+        if ($ch[$i] -eq $e) {
+            [void]$sb.Append($ch[$i]); $i++
+            while ($i -lt $ch.Length) {
+                $c = $ch[$i]; [void]$sb.Append($c); $i++
+                if ($c -match '[A-Za-z]') { break }
+            }
+        } elseif ($vis -ge $max) {
+            $clipped = $true; $i++
+        } else {
+            [void]$sb.Append($ch[$i]); $vis++; $i++
+        }
+    }
+    if ($clipped) { [void]$sb.Append("$e[0m") }
+    $sb.ToString()
+}
 $cGreen=92; $cRed=91; $cGray=90; $cWhite=97; $cTitle=92; $cBorder=90
 
 $cores = [Environment]::ProcessorCount
@@ -30,13 +54,27 @@ function Get-Servers {
         [pscustomobject]@{ Name=$p[0].Trim(); Port=$p[3].Trim() }
     }
 }
-function Port-Pid($port) {
-    if (-not $port) { return $null }
-    try {
-        $c = Get-NetTCPConnection -LocalPort ([int]$port) -State Listen -ErrorAction SilentlyContinue
-        if ($c) { return ($c.OwningProcess | Select-Object -First 1) }
-    } catch { }
+# portless servers: check the PID file written by /start
+$pidDir = Join-Path $root ".pids"
+function Pid-Alive($name) {
+    $pf = Join-Path $pidDir "$name.pid"
+    if (Test-Path $pf) {
+        $procId = Get-Content $pf -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($procId -and (Get-Process -Id $procId -ErrorAction SilentlyContinue)) { return [int]$procId }
+    }
     return $null
+}
+
+# one query for ALL listening ports (fast), instead of one slow CIM call per server
+function Get-ListenMap {
+    $map = @{}
+    try {
+        foreach ($c in (Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue)) {
+            $p = [int]$c.LocalPort
+            if (-not $map.ContainsKey($p)) { $map[$p] = $c.OwningProcess }
+        }
+    } catch { }
+    return $map
 }
 function Format-Mem($bytes) { if (-not $bytes) { return "-" }; return ("{0:N0} MB" -f ($bytes / 1MB)) }
 function Format-Uptime($start) {
@@ -55,9 +93,8 @@ function CpuBar($pct) {
 function Line($colored, $vis) {
     $pad = $script:inner - $vis
     if ($pad -lt 0) { $pad = 0 }
-    Write-Host (C $cBorder $V) -NoNewline
-    Write-Host ($colored + (" " * $pad)) -NoNewline
-    Write-Host (C $cBorder $V)
+    $full = (C $cBorder $V) + $colored + (" " * $pad) + (C $cBorder $V)
+    Write-Host (Clip $full)
 }
 
 function Show-Status {
@@ -66,13 +103,14 @@ function Show-Status {
     $inner = $script:inner
 
     $list = Get-Servers
+    $listen = Get-ListenMap
 
     # header
     $clock = (Get-Date).ToString("HH:mm:ss")
     $title = " SERVER LAUNCHER "
     $mid   = $inner - $title.Length - $clock.Length - 3
     if ($mid -lt 1) { $mid = 1 }
-    Write-Host (C $cBorder ("$TL$H" + (C $cTitle $title) + ($H.ToString() * $mid) + " " + (C $cGray $clock) + " $TR"))
+    Write-Host (Clip (C $cBorder ("$TL$H" + (C $cTitle $title) + ($H.ToString() * $mid) + " " + (C $cGray $clock) + " $TR")))
 
     # column header (PORT pinned right)
     $hdrL = "  " + "SERVER".PadRight(19) + "STATUS".PadRight(14) + "CPU".PadRight(13) + "MEM".PadRight(11) + "UPTIME".PadRight(9) + $RE.ToString() + " ".PadRight(4)
@@ -80,13 +118,13 @@ function Show-Status {
     if ($gapH -lt 1) { $gapH = 1 }
     $hdr = $hdrL + (" " * $gapH) + "PORT"
     Line (C $cGray $hdr) $hdr.Length
-    Write-Host (C $cBorder ("$LT" + ($H.ToString() * $inner) + "$RT"))
+    Write-Host (Clip (C $cBorder ("$LT" + ($H.ToString() * $inner) + "$RT")))
 
     $nOn = 0; $nOff = 0
     $idx = 0
     foreach ($s in $list) {
         $idx++
-        $procId = Port-Pid $s.Port
+        $procId = if ($s.Port) { $listen[[int]$s.Port] } else { Pid-Alive $s.Name }
         $proc = $null
         if ($procId) { $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue }
 
@@ -132,18 +170,21 @@ function Show-Status {
         Line $colored $inner
     }
 
-    Write-Host (C $cBorder ("$LT" + ($H.ToString() * $inner) + "$RT"))
+    Write-Host (Clip (C $cBorder ("$LT" + ($H.ToString() * $inner) + "$RT")))
     $sum = "  " + (C $cGreen "$nOn online") + (C $cGray ("  " + [char]0x00B7 + "  ")) + (C $cGray "$nOff stopped")
-    $visSum = 2 + "$nOn online".Length + 6 + "$nOff stopped".Length
+    $visSum = 2 + "$nOn online".Length + 5 + "$nOff stopped".Length
     Line $sum $visSum
-    Write-Host (C $cBorder ("$BL" + ($H.ToString() * $inner) + "$BR"))
+    Write-Host (Clip (C $cBorder ("$BL" + ($H.ToString() * $inner) + "$BR")))
 }
 
 if ($Watch) {
     [Console]::CursorVisible = $false
     try {
         Clear-Host
+        $lastW = [Console]::WindowWidth
         while ($true) {
+            $w = [Console]::WindowWidth
+            if ($w -ne $lastW) { $lastW = $w; Clear-Host }   # resized: wipe artifacts, refit
             [Console]::SetCursorPosition(0,0)
             Show-Status
             Write-Host (C $cGray "  refreshing every ${Interval}s  -  press any key to stop      ")
@@ -151,6 +192,7 @@ if ($Watch) {
             while ($t -lt ($Interval * 10)) {
                 if ([Console]::KeyAvailable) { [Console]::ReadKey($true) | Out-Null; Write-Host ""; return }
                 Start-Sleep -Milliseconds 100
+                if ([Console]::WindowWidth -ne $lastW) { break }   # redraw immediately on resize
                 $t++
             }
         }

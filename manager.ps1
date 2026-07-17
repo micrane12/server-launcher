@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory=$true)][string]$Action,   # start | stop | restart | logs
+    [Parameter(Mandatory=$true)][string]$Action,   # start | stop | restart | logs | info | clearlogs
     [string]$Name = ""                             # server name, or "all"
 )
 
@@ -75,6 +75,35 @@ switch ($Action) {
         if (-not (Test-Path $log)) { Write-Host "  no log yet for $($s.Name)"; break }
         Write-Host "  tailing logs\$($s.Name).log  (Ctrl+C to stop)`n"
         Get-Content $log -Tail 60 -Wait
+    }
+    "clearlogs" {
+        foreach ($s in $targets) {
+            $log = LogFile $s.Name
+            if (Test-Path $log) { Clear-Content $log -ErrorAction SilentlyContinue; Write-Host "  cleared logs\$($s.Name).log" }
+            else { Write-Host "  no log yet for $($s.Name)" }
+        }
+    }
+    "info" {
+        $e=[char]27; $g="$e[92m"; $gray="$e[90m"; $w="$e[97m"; $rst="$e[0m"
+        foreach ($s in $targets) {
+            $pp = Port-Pid $s.Port
+            $proc = if ($pp) { Get-Process -Id $pp -ErrorAction SilentlyContinue } else { $null }
+            $status = if ($proc) { "${g}online$rst" } else { "${gray}stopped$rst" }
+            Write-Host ""
+            Write-Host "  ${w}$($s.Name)$rst   $status"
+            Write-Host "  ${gray}folder :$rst $($s.Dir)"
+            Write-Host "  ${gray}command:$rst $($s.Cmd)"
+            Write-Host "  ${gray}port   :$rst $(if ($s.Port) { ':' + $s.Port } else { '-' })"
+            Write-Host "  ${gray}log    :$rst logs\$($s.Name).log"
+            if ($proc) {
+                $up  = (Get-Date) - $proc.StartTime
+                $mem = "{0:N0} MB" -f ($proc.WorkingSet64 / 1MB)
+                Write-Host "  ${gray}pid    :$rst $($proc.Id)"
+                Write-Host "  ${gray}memory :$rst $mem"
+                Write-Host ("  ${gray}uptime :$rst {0}h {1}m {2}s" -f [int]$up.TotalHours, $up.Minutes, $up.Seconds)
+            }
+            Write-Host ""
+        }
     }
     default   { Write-Host "  unknown action: $Action" }
 }

@@ -21,15 +21,36 @@ for /f %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
 cls
 call :banner
 call :list
+set "FRONT=1"
 
 :loop
 echo.
 set "cmd="
 set "arg="
-set /p "input=!ESC![92mserver !ESC![92m^>!ESC![0m "
-for /f "tokens=1,2" %%a in ("!input!") do ( set "cmd=%%a" & set "arg=%%b" )
+set "inf=%TEMP%\sl_in.txt"
+del "%inf%" 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%prompt.ps1" -Out "%inf%" -Front !FRONT!
+set "input="
+if exist "%inf%" set /p "input=" < "%inf%"
+
+REM terminal was resized on the front page: redraw it at the new width
+if "!input!"=="__redraw__" (
+    cls
+    call :banner
+    call :list
+    goto loop
+)
+
+set "arg2="
+for /f "tokens=1,2,3" %%a in ("!input!") do ( set "cmd=%%a" & set "arg=%%b" & set "arg2=%%c" )
 if "!cmd!"=="" goto loop
 
+REM fresh screen: entered command goes to the first row
+cls
+echo !ESC![92mserver ^>!ESC![0m !input!
+set "FRONT=0"
+
+if /i "!cmd!"=="/home"    ( cls & call :banner & call :list & set "FRONT=1" & goto loop )
 if /i "!cmd!"=="/help"    ( call :help & goto loop )
 if "!cmd!"=="/"           ( call :help & goto loop )
 if "!cmd!"=="/?"          ( call :help & goto loop )
@@ -41,11 +62,19 @@ if /i "!cmd!"=="/start"   ( call :resolve start   "!arg!" & goto loop )
 if /i "!cmd!"=="/stop"    ( call :resolve stop    "!arg!" & goto loop )
 if /i "!cmd!"=="/restart" ( call :resolve restart "!arg!" & goto loop )
 if /i "!cmd!"=="/logs"    ( call :resolve logs    "!arg!" & goto loop )
-if /i "!cmd!"=="/launch"  ( if "!arg!"=="" ( call :scripts ) else ( call :runscript "!arg!" ) & goto loop )
-if /i "!cmd!"=="/scripts" ( call :scripts & goto loop )
+if /i "!cmd!"=="/browser"    ( call :resolve browser   "!arg!" & goto loop )
+if /i "!cmd!"=="/url"        ( call :resolve browser   "!arg!" & goto loop )
+if /i "!cmd!"=="/env"        ( call :resolve env       "!arg!" & goto loop )
+if /i "!cmd!"=="/edit"       ( call :resolve edit      "!arg!" & goto loop )
+if /i "!cmd!"=="/clear-logs" ( call :resolve clearlogs "!arg!" & goto loop )
+if /i "!cmd!"=="/info"       ( call :resolve info      "!arg!" & goto loop )
+if /i "!cmd!"=="/launch"  ( call :runscript "!arg!" & goto loop )
+if /i "!cmd!"=="/scripts" ( call :runscript "!arg!" & goto loop )
 if /i "!cmd!"=="/run"     ( call :runscript "!arg!" & goto loop )
 if /i "!cmd!"=="/add"     ( call :addserver & goto loop )
+if /i "!cmd!"=="/scan"    ( call :scanfolder "!arg!" & goto loop )
 if /i "!cmd!"=="/remove"  ( call :removeserver "!arg!" & goto loop )
+if /i "!cmd!"=="/move"    ( call :moveserver "!arg!" "!arg2!" & goto loop )
 if /i "!cmd!"=="/quit"    ( exit /b )
 if /i "!cmd!"=="/exit"    ( exit /b )
 
@@ -101,6 +130,42 @@ call :loadservers
 call :list
 exit /b
 
+REM ---------------- scan a folder for projects to add ----------------
+:scanfolder
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scan.ps1" -Root "%~1" -Cfg "%CFG%"
+call :loadservers
+call :list
+exit /b
+
+REM ---------------- arrow-key pickers ----------------
+REM pick.ps1 returns the chosen row via exit code (10 + index); 0 = cancelled
+:pickserver
+set "PICK="
+set "itemsf=%TEMP%\sl_items.txt"
+> "%itemsf%" (
+    for /l %%i in (1,1,%COUNT%) do echo(%%i^|!name%%i!  :!port%%i!
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%pick.ps1" -File "%itemsf%" -Title "Select a server"
+if !ERRORLEVEL! GEQ 10 set /a PICK=!ERRORLEVEL!-9
+exit /b
+
+:pickscript
+set "PICK="
+set "itemsf=%TEMP%\sl_items.txt"
+set "lastproj="
+> "%itemsf%" (
+    for /l %%i in (1,1,!RC!) do (
+        if not "!rproj%%i!"=="!lastproj!" (
+            if defined lastproj echo(-
+            set "lastproj=!rproj%%i!"
+        )
+        echo(%%i^|[!rproj%%i!] !rname%%i!
+    )
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%pick.ps1" -File "%itemsf%" -Title "Launch which helper"
+if !ERRORLEVEL! GEQ 10 set /a PICK=!ERRORLEVEL!-9
+exit /b
+
 REM ---------------- resolve a name-or-number arg to IDX ----------------
 :findidx
 set "IDX="
@@ -109,10 +174,18 @@ if defined name%~1 set "IDX=%~1"
 if not defined IDX for /l %%i in (1,1,%COUNT%) do if /i "!name%%i!"=="%~1" set "IDX=%%i"
 exit /b
 
+REM ---------------- reorder servers ----------------
+:moveserver
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%move.ps1" -Cfg "%CFG%" -From "%~1" -To "%~2"
+call :loadservers
+call :list
+exit /b
+
 REM ---------------- remove a server (immediate) ----------------
 :removeserver
 set "a=%~1"
-if "%a%"=="" set /p "a=  remove which (name or number): "
+if "%a%"=="" ( call :pickserver & set "a=!PICK!" )
+if "%a%"=="" exit /b
 call :findidx "%a%"
 if not defined IDX ( echo   no server "%a%". & exit /b )
 set "rmname=!name%IDX%!"
@@ -182,10 +255,18 @@ exit /b
 REM ------ run a scanned script by number ------
 :runscript
 call :scanscripts
+if "!RC!"=="0" ( echo   no .bat/.cmd helper files found in your project folders. & exit /b )
 set "n=%~1"
-if "%n%"=="" ( call :scripts & set /p "n=Pick a number: " )
-set "sn=!rname%n%!"
-set "sp=!rpath%n%!"
+if "%n%"=="" (
+    call :pickscript
+    if "!PICK!"=="" exit /b
+    for %%n in (!PICK!) do set "sp=!rpath%%n!"
+) else (
+    set "sp=!rpath%n%!"
+    set "sn=!rname%n%!"
+)
+if "!sp!"=="" ( exit /b )
+for %%F in ("!sp!") do set "sn=%%~nxF"
 if "!sn!"=="" ( echo   invalid selection. & exit /b )
 if not exist "!sp!" ( echo   not found: !sp! & exit /b )
 echo !ESC![92m  running !sn! ...!ESC![0m
@@ -206,29 +287,56 @@ set "target=%~2"
 
 REM handle ALL
 if /i "!target!"=="all" (
-    if /i "!action!"=="open" ( echo "all" is not valid for /open. & exit /b )
+    if /i "!action!"=="open"    ( echo "all" is not valid for /open. & exit /b )
+    if /i "!action!"=="browser" ( echo "all" is not valid for /browser. & exit /b )
+    if /i "!action!"=="env"     ( echo "all" is not valid for /env. & exit /b )
+    if /i "!action!"=="edit"    ( echo "all" is not valid for /edit. & exit /b )
     powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%manager.ps1" -Action !action! -Name all
     exit /b
 )
 
-REM if nothing given, show list and ask
-if "!target!"=="" (
-    call :list
-    set /p "target=  pick a name or number: "
-)
+REM if nothing given, pick with arrow keys
+if "!target!"=="" ( call :pickserver & set "target=!PICK!" )
+if "!target!"=="" exit /b
 
 REM resolve name-or-number to an index
 call :findidx "!target!"
 if not defined IDX ( echo   no server "!target!". & exit /b )
 set "sel=!name%IDX%!"
 set "selport=!port%IDX%!"
+set "seldir=!dir%IDX%!"
 
 if /i "!action!"=="open" (
+    if not exist "!seldir!" ( echo   folder not found: !seldir! & exit /b )
+    echo Opening cmd at !seldir! ...  (type 'exit' to return to the launcher)
+    pushd "!seldir!"
+    cmd /k
+    popd
+    exit /b
+)
+
+if /i "!action!"=="browser" (
+    if "!selport!"=="" ( echo   !sel! has no port set - nothing to open. & exit /b )
     echo Opening http://localhost:!selport! ...
     start "" "http://localhost:!selport!"
     exit /b
 )
 
-REM start / stop / restart / logs one, via the manager
+if /i "!action!"=="env" (
+    if not exist "!seldir!\.env" ( echo   no .env file in !seldir! & exit /b )
+    echo Opening !seldir!\.env ...
+    start "" "!seldir!\.env"
+    exit /b
+)
+
+if /i "!action!"=="edit" (
+    if not exist "!seldir!" ( echo   folder not found: !seldir! & exit /b )
+    where code >nul 2>nul || ( echo   VS Code ^('code'^) is not on your PATH. & exit /b )
+    echo Opening !seldir! in VS Code ...
+    code "!seldir!"
+    exit /b
+)
+
+REM start / stop / restart / logs / info / clearlogs one, via the manager
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%manager.ps1" -Action !action! -Name "!sel!"
 exit /b
